@@ -27,16 +27,13 @@ while cap.isOpened():
     #Draw Facial Landmarks
     if result.multi_face_landmarks:  #This will show a list of landmark sets on the face
         for face_landmarks in result.multi_face_landmarks:
-            lm = face_landmarks.landmark[468]
-            print(f"Left pupil -> x: {lm.x:.3f}, y: {lm.y:.3f}")
-            break
-            # mp_drawing.draw_landmarks(
-            #     image = image,
-            #     landmark_list = face_landmarks,
-            #     connections = mp_face_mesh.FACEMESH_TESSELATION, 
-            #     landmark_drawing_spec = None, 
-            #     connection_drawing_spec = mp_drawing_styles.get_default_face_mesh_tesselation_style()
-            # )
+            mp_drawing.draw_landmarks(
+                image = image,
+                landmark_list = face_landmarks,
+                connections = mp_face_mesh.FACEMESH_TESSELATION, 
+                landmark_drawing_spec = None, 
+                connection_drawing_spec = mp_drawing_styles.get_default_face_mesh_tesselation_style()
+            )
     cv2.imshow('Mediapipe Face Mesh', image)
 
     if cv2.waitKey(5) & 0xFF == 27:
