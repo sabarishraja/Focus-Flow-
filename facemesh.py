@@ -1,55 +1,91 @@
 import cv2
 import mediapipe as mp
+import numpy as np
 
-# ——— Setup Mediapipe Face Mesh ———
+# ——— Setup MediaPipe Face Mesh ———
 mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(max_num_faces=1)
-mp_drawing = mp.solutions.drawing_utils
+face_mesh = mp_face_mesh.FaceMesh(
+    max_num_faces=2,
+    refine_landmarks=True,
+    static_image_mode=False,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5,
+)
 
-# ——— Define only the eye‐region connections ———
-LEFT_EYE_CONNECTIONS  = set(mp_face_mesh.FACEMESH_LEFT_EYE)
-RIGHT_EYE_CONNECTIONS = set(mp_face_mesh.FACEMESH_RIGHT_EYE)
-EYE_CONNECTIONS       = LEFT_EYE_CONNECTIONS | RIGHT_EYE_CONNECTIONS
+# ——— Landmark indices ———
+LEFT_IRIS = [468, 469, 470, 471, 472]
+RIGHT_IRIS = [473, 474, 475, 476, 477]
 
-# ——— Precompute the unique eye‐landmark indices ———
-eye_indices = { idx for connection in EYE_CONNECTIONS for idx in connection }
+LEFT_EYE_CORNERS = [33, 133]
+RIGHT_EYE_CORNERS = [362, 263]
+
+LEFT_EYE_LIDS = [159, 145]
+RIGHT_EYE_LIDS = [386, 374]
+
+LEFT_EYE_OUTLINE = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+RIGHT_EYE_OUTLINE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
 
 # ——— Open webcam ———
 cap = cv2.VideoCapture(0)
 
 while cap.isOpened():
-    success, image = cap.read()
+    success, frame = cap.read()
     if not success:
         continue
 
-    # Mirror & convert to RGB
-    image = cv2.flip(image, 1)
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    frame = cv2.flip(frame, 1)
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    h, w, _ = frame.shape
 
-    # Face Mesh processing
-    result = face_mesh.process(rgb_image)
+    results = face_mesh.process(rgb_frame)
 
-    if result.multi_face_landmarks:
-        for face_landmarks in result.multi_face_landmarks:
+    if results.multi_face_landmarks:
+        for face_landmarks in results.multi_face_landmarks:
 
-            # Draw only the eye‐region connections with red lines
-            mp_drawing.draw_landmarks(
-                image=image,
-                landmark_list=face_landmarks,
-                connections=EYE_CONNECTIONS,
-                landmark_drawing_spec=None,
-                connection_drawing_spec=mp_drawing.DrawingSpec(color=(0,0,255), thickness=1)
-            )
+            def draw_eye(iris_idxs, corner_idxs, lid_idxs, outline_idxs, label):
+                # ——— Eye Outline using polylines ———
+                outline_points = np.array([
+                    (int(face_landmarks.landmark[idx].x * w), int(face_landmarks.landmark[idx].y * h))
+                    for idx in outline_idxs
+                ])
+                cv2.polylines(frame, [outline_points], isClosed=True, color=(0, 255, 255), thickness=1)  # Electric Blue
 
-            # Draw small red circles at each eye landmark
-            h, w, _ = image.shape
-            for idx in eye_indices:
-                lm = face_landmarks.landmark[idx]
-                x_px, y_px = int(lm.x * w), int(lm.y * h)
-                cv2.circle(image, (x_px, y_px), 1, (0,0,255), -1)  # radius=2, filled
+                # ——— Iris landmarks (larger dots) ———
+                for idx in iris_idxs:
+                    x = int(face_landmarks.landmark[idx].x * w)
+                    y = int(face_landmarks.landmark[idx].y * h)
+                    cv2.circle(frame, (x, y), 2, (255, 105, 180), -1)  # Hot Pink, Bigger Dots
 
-    cv2.imshow('Eye Mesh Only (Red)', image)
-    if cv2.waitKey(5) & 0xFF == 27:  # Esc to quit
+                # ——— Eye corners ———
+                corner_coords = []
+                for idx in corner_idxs:
+                    x = int(face_landmarks.landmark[idx].x * w)
+                    y = int(face_landmarks.landmark[idx].y * h)
+                    corner_coords.append((x, y))
+                    cv2.circle(frame, (x, y), 2, (50, 255, 50), -1)  # Lime
+
+                # ——— Eyelids ———
+                y_top = face_landmarks.landmark[lid_idxs[0]].y * h
+                y_bottom = face_landmarks.landmark[lid_idxs[1]].y * h
+                for idx in lid_idxs:
+                    x = int(face_landmarks.landmark[idx].x * w)
+                    y = int(face_landmarks.landmark[idx].y * h)
+                    cv2.circle(frame, (x, y), 2, (0, 165, 255), -1)  # Orange
+
+                # ——— Eye center ———
+                if len(corner_coords) == 2:
+                    x_center = (corner_coords[0][0] + corner_coords[1][0]) // 2
+                    y_center = int((y_top + y_bottom) / 2)
+                    cv2.circle(frame, (x_center, y_center), 2, (0, 0, 255), -1)  # Red
+                    cv2.putText(frame, f'{label} Eye Center', (x_center + 5, y_center - 5),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1)  # Red
+
+            # ——— Draw both eyes ———
+            draw_eye(LEFT_IRIS, LEFT_EYE_CORNERS, LEFT_EYE_LIDS, LEFT_EYE_OUTLINE, "Left")
+            draw_eye(RIGHT_IRIS, RIGHT_EYE_CORNERS, RIGHT_EYE_LIDS, RIGHT_EYE_OUTLINE, "Right")
+
+    cv2.imshow('Both Eye Tracking (Vibrant Pupils)', frame)
+    if cv2.waitKey(1) & 0xFF == 27:  # ESC
         break
 
 cap.release()
